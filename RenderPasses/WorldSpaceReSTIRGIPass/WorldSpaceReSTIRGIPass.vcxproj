@@ -36,13 +36,27 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ShaderSource Include="FinalShading.cs.slang" />
-    <ShaderSource Include="LoadShadingData.slang" />
-    <ShaderSource Include="Params.slang" />
-    <ShaderSource Include="PathState.slang" />
-    <ShaderSource Include="PathTracer.slang" />
-    <ShaderSource Include="ReflectTypes.cs.slang" />
-    <ShaderSource Include="TracePass.rt.slang" />
+    <ShaderSource Include="FinalShading.cs.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
+    <ShaderSource Include="LoadShadingData.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
+    <ShaderSource Include="Params.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
+    <ShaderSource Include="PathState.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
+    <ShaderSource Include="PathTracer.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
+    <ShaderSource Include="ReflectTypes.cs.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
+    <ShaderSource Include="TracePass.rt.slang">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ShaderSource>
   </ItemGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>

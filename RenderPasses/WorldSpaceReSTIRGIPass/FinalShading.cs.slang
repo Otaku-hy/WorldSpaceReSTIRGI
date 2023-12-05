@@ -11,6 +11,7 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Materials.MaterialShading;
 import Experimental.WorldSpaceReSTIRGI.GIFinalSample;
+import Experimental.WorldSpaceReSTIRGI.ReconnectionData;
 import Params;
 import LoadShadingData;
 import PathTracer;
@@ -19,6 +20,7 @@ struct FinalShading
 {
     Texture2D<PackedHitInfo> vbuffer;
     StructuredBuffer<FinalSample> finalSample;
+    StructuredBuffer<ReconnectionData> reconnectionDataBuffer;
 
     RWTexture2D<float3> outputColor;
 
@@ -26,22 +28,32 @@ struct FinalShading
 
     void execute(uint2 pixel)
     {
-        HitInfo hit = HitInfo(vbuffer[pixel]);
+        uint linearID = pixel.y * params.frameDim.x + pixel.x;
+        ReconnectionData data = reconnectionDataBuffer[linearID];
+
+        HitInfo hit = HitInfo(data.preRcVertexHitInfo);
         if (!hit.isValid())
             return;
-
+        float flag = 1.f;
         float lod = 0.f;
-        float3 rayDir = gScene.camera.computeRayPinhole(pixel, params.frameDim).dir;
-        ShadingData sd = LoadShadingData(hit, rayDir, lod, true);
-
-        uint linearID = pixel.y * params.frameDim.x + pixel.x;
+        bool adjustShadingNormal = data.pathLength <= 1 ? true : false;
+        ShadingData sd = LoadShadingData(hit, data.preRcVertexWo, lod, adjustShadingNormal);
+                 
+       
         FinalSample sample = finalSample[linearID];
+        if (sd.linearRoughness < 0.2 && data.pathLength == 1)
+        {
+            
+            //sample.Li = 0.f;
+            //flag = sd.p
+            FalcorBSDF bsdf;
+            bsdf.setup(sd);
+            flag = bsdf.pDiffuseReflection;
+            sd.setActiveLobes((uint) LobeType::Diffuse);
+        }
 
-        if (params.currentGIInstance == 0)
-            outputColor[pixel] += evalBSDFCosine(sd, sample.dir) * sample.Li / params.numGIInstance;
-        else
-            outputColor[pixel] += evalBSDFCosine(sd, sample.dir) * sample.Li / params.numGIInstance;
-        
+        outputColor[pixel] += (data.pathPreRadiance + data.pathPreThp * evalBSDFCosine(sd, sample.dir) * sample.Li /flag ) / params.numGIInstance;
+        //outputColor[pixel] = sample.Li;
         //outputColor[pixel] += sample.Li;
 
     }

@@ -9,11 +9,11 @@ struct GIParameter
     uint frameCount = 0u;
     uint instanceID = 0u;
 
-    float fov = 0.f;
-    float minCellSize = 0.f;
     float3 sceneBBMin = { };
+    float fov = 0.f;
 
-    uint _pad;
+    float4 _pad = { };
+    float minCellSize = 0.0f;   
 };
 
 END_NAMESPACE_FALCOR

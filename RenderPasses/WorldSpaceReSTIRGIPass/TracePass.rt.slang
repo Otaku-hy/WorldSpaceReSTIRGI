@@ -14,6 +14,9 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Materials.MaterialShading;
 import Experimental.WorldSpaceReSTIRGI.InitialSamples;
+import Experimental.WorldSpaceReSTIRGI.ReconnectionData;
+
+//import PathState;
 import Params;
 import LoadShadingData;
 import PathTracer;
@@ -28,15 +31,19 @@ struct SampleInitializer
 
     RWTexture2D<float3> outputColor;
 
+    float roughnessThreshold;
+
     void TraceScatterRay(inout PathPayLoad pathState)
     {
         Ray ray = pathState.GenerateScatterRay();
+ 
         TraceRay(gScene.rtAccel, RAY_FLAG_NONE, 0xff, 0, rayTypeCount, 0, ray.toRayDesc(), pathState);
     };
 
-    void TracePass(uint2 pixel,out InitialSample sample)
+    void TracePass(uint2 pixel,out InitialSample sample,out ReconnectionData rcData)
     {
         sample = {};
+        rcData = {};
         HitInfo hit = HitInfo(vbuffer[pixel]);
 
         float3 primaryRayDir = gScene.camera.computeRayPinhole(pixel,pathtracer.params.frameDim).dir;
@@ -44,55 +51,66 @@ struct SampleInitializer
 
         if(hit.isValid())
         {
-            const float lod = 0.f;
-            ShadingData sd = LoadShadingData(hit,primaryRayDir,lod,true);
+            PathPayLoad pathState = { };
+            pathtracer.GeneratePathState(pixel, pathState);
 
-            SampleGenerator sg = SampleGenerator(pixel, pathtracer.params.frameCount * pathtracer.params.numGIInstance + pathtracer.params.currentGIInstance);
-
-            PathPayLoad pathState = PathPayLoad(sg);
             pathState.direction = primaryRayDir;
             pathState.pdf = 1;
 
             pathtracer.HandleHit(pathState,hit);
 
-            float3 thp = pathState.thp;
-
-            sample.preRcVertexPos = sd.posW;
-            sample.preRcVertexNorm = pathState.norm;
-
-            pathState.thp = 1.f;
-            pathState.pdf = 1.f;
-            pathState.radiance = 0.f;
-
-            while(!pathState.isTerminated)
+            while (pathState.IsActive())
             {
                 TraceScatterRay(pathState);
-                if(pathState.currentVertexIndex == 2u)
-                {
-                    sample.rcVertexPos = pathState.origin;
-                    sample.rcVertexNorm = pathState.norm;
-                }
             }
 
-            sample.rcVertexLo += pathState.radiance;
+            const float lod = 0.f;
+            HitInfo preRcHitInfo = HitInfo(pathState.preRcVertexHit);
+            if (preRcHitInfo.isValid())
+            {
+                ShadingData sd = LoadShadingData(preRcHitInfo, pathState.preRcVertexWo, lod, true);
 
-            vColor += pathState.lForDelta * thp;
-            float3 wo = normalize(sample.rcVertexPos - sample.preRcVertexPos);
-            float3 testColor = 0.5f * wo + 0.5f;
-            sample.pdf = evalPdfBSDF(sd, wo);
+                sample.preRcVertexPos = sd.posW;
+                sample.preRcVertexNorm = sd.N;
+
+                sample.rcVertexLo = pathState.rcVertexRadiance;
+
+                sample.rcVertexPos = pathState.rcVertexPos;
+                sample.rcVertexNorm = pathState.rcVertexNorm;
+
+                float3 wo = normalize(sample.rcVertexPos - sample.preRcVertexPos);
+
+                uint sampleFlag = -1;
+                if (pathState.rcVertexLength == 2 && sd.linearRoughness < roughnessThreshold)
+                {
+                    
+                   // sampleFlag = uint(SampledBSDFFlags::DiffuseReflection);
+                    //sample.pdf = evalPdfBSDF(sd, wo, sampleFlag);
+                    sd.setActiveLobes((uint) LobeType::Diffuse);
+                }
+                sample.pdf = evalPdfBSDF(sd, wo, sampleFlag);
+            }
+
+            rcData.preRcVertexHitInfo = pathState.preRcVertexHit;
+            rcData.pathPreThp = pathState.prefixThp;
+            rcData.pathPreRadiance = pathState.prefixPathRadiance;
+            rcData.preRcVertexWo = pathState.preRcVertexWo;
+            rcData.pathLength = pathState.rcVertexLength - 1;
             //float invPdf = evalPdfBSDF(sd, wo) > 0.f ? 1.f / evalPdfBSDF(sd, wo) : 0.f;
             //vColor += evalBSDFCosine(sd, wo) * ss.rcVertexLo * invPdf;
             //sample.vColor += sample.sColor * thp;
+            vColor += pathState.LoForDelta;
             if (pathtracer.params.currentGIInstance == 0)
                 outputColor[pixel] = vColor / pathtracer.params.numGIInstance;
             else
                 outputColor[pixel] += vColor / pathtracer.params.numGIInstance;
+            
         }
         else
         {
             float3 color = pathtracer.GetBackGroundColor(primaryRayDir);
             if (pathtracer.params.currentGIInstance == 0)
-                outputColor[pixel] = color/ pathtracer.params.numGIInstance;
+                outputColor[pixel] = color / pathtracer.params.numGIInstance;
             else
                 outputColor[pixel] += color / pathtracer.params.numGIInstance;
         }
@@ -128,7 +146,7 @@ void ScatterTriangleClosestHit(inout PathPayLoad pathState,BuiltInTriangleInters
     thit.barycentrics = attribs.barycentrics;
     HitInfo hit = HitInfo(thit);
 
-    pathState.currentVertexIndex++;
+    
     pathtracer.HandleHit(pathState,hit);   
 }
 
@@ -154,7 +172,6 @@ void ScatterDisplacedTriangleMeshClosestHit(inout PathPayLoad pathState, Displac
     displacedTriangleHit.displacement = attribs.displacement;
 
     HitInfo hit = HitInfo(displacedTriangleHit);
-    pathState.currentVertexIndex++;
     pathtracer.HandleHit(pathState,hit);  
 }
 
@@ -163,7 +180,9 @@ void RayGen()
 {
     uint2 pixel = DispatchRaysIndex().xy;
     InitialSample sample;
-    sampleInitializer.TracePass(pixel,sample);
+    ReconnectionData rcData;
+    sampleInitializer.TracePass(pixel,sample,rcData);
     uint linearIdx = pixel.y * pathtracer.params.frameDim.x + pixel.x;
     sampleInitializer.initialSamples[linearIdx] = sample;
+    sampleInitializer.reconnectionDataBuffer[linearIdx] = rcData;
 }

@@ -1,6 +1,9 @@
 import Utils.Math.PackedFormats;
 import Scene.HitInfo;
 import Utils.Sampling.SampleGenerator;
+import Utils.Math.Ray;
+
+static const float kRayTMax = 1e20f;
 
 enum class PathFlags
 {
@@ -18,9 +21,10 @@ enum class PathFlags
 
 struct PathPayLoad
 {
-    uint16_t flags;
-    uint8_t currentVertexIndex; //vertexIndex along the path, intialized value is 1
-    
+    uint flags;
+    uint currentVertexIndex; //vertexIndex along the path, intialized value is 1
+    uint rcVertexLength;
+
     bool isLastVertexClassifiedAsRough;
 
     float3 origin;
@@ -31,14 +35,19 @@ struct PathPayLoad
 
     float3 prefixThp;
     float3 thp;
+    float3 radiance;
 
-    float3 LiForDelta;
+    float3 LoForDelta;
 
     float3 prefixPathRadiance;
     float3 rcVertexRadiance;
 
-    PackedHitInfo preRcVertexHit;
-    float3 preRcVertexWo;
+    //PackedHitInfo preRcVertexHit;
+    ///float3 preRcVertexWo;
+
+    float3 rcVertexPos;
+    float3 rcVertexNorm;
+    float rcPdf;
 
     SampleGenerator sg;
 
@@ -83,10 +92,6 @@ struct PathPayLoad
     {
         return !IsActive();
     }
-    bool IsSpecular()
-    {
-        return HasFlag(PathFlags::specular);
-    }
     bool IsDelta()
     {
         return HasFlag(PathFlags::delta);
@@ -111,8 +116,21 @@ struct PathPayLoad
     {
         return HasFlag(PathFlags::lastVertexlightSampled);
     }
-    bool 
-    
+     
+    float3 GetCurrentThp()
+    {
+        return prefixThp * thp;
+    }
+
+    [mutating] void UpdatePrefixThp()    ///for vertex not reach preRcVertex
+    {
+        prefixThp *= thp;
+        thp = 1.f;
+    }
+    [mutating] void ResetThp()      /// Reset throughput at rcVertex
+    {
+        thp = 1.f;
+    }
 
     bool HasFlag(PathFlags flag)
     {
@@ -122,13 +140,18 @@ struct PathPayLoad
     [mutating] void SetFlag(PathFlags flag, bool value = true)
     {
         if (value)
-            flags |= uint16_t(uint(flag));
+            flags |= (uint(flag));
         else
-            flags &= ~uint16_t(uint(flag));
+            flags &= ~(uint(flag));
+    }
+
+    [mutating] void ClearEventFlags()
+    {
+        flags &= ~(uint(PathFlags::specular) | uint(PathFlags::delta) | uint(PathFlags::diffuseBounce) | uint(PathFlags::specularBounce));
     }
 
     Ray GenerateScatterRay()
     {
-        return Ray(origin,direction,0.f,kRayTMax);
+        return Ray(origin,direction,0.f,1e20f);
     }
 };

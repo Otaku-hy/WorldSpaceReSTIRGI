@@ -64,7 +64,7 @@ namespace Falcor
             runtimeDirty |= widget.var("Depth threshold", mOptions->depthThreshold, 0.f, 1.f);
             runtimeDirty |= widget.var("Cells Dimension", mOptions->sceneGridDimension, 1u, 300u);
 
-            staticDirty |= widget.var("Roughness threshold", mOptions->roughnessThreshold, 0.f, 1.f);
+            staticDirty |= widget.var("Roughness threshold", mOptions->roughnessThreshold, 0.f, 1.2f);
             staticDirty |= widget.dropdown("Target pdf mode", kReSTIRGIModeList, reinterpret_cast<uint32_t&>(mOptions->resamplingTargetPdf));
         }
 
@@ -80,10 +80,14 @@ namespace Falcor
         UpdateResources(frameDim);
         params.frameDim = frameDim;
         params.fov = focalLengthToFovY(mpScene->getCamera()->getFocalLength(), Camera::kDefaultFrameHeight);
-        params.sceneBBMin = mpScene->getSceneBounds().minPoint;
+        params.sceneBBMin = mpScene->getSceneBounds().minPoint -float3(0.1, 0.1, 0.1);
 
         float3 boudingSize = abs((mpScene->getSceneBounds().maxPoint - mpScene->getSceneBounds().minPoint) / static_cast<float>(mOptions->sceneGridDimension));
+
+        params._pad = float4(0, 0, 0,0);
         params.minCellSize = std::max(boudingSize.x, std::max(boudingSize.y, boudingSize.z));
+
+        //std::cout << params.minCellSize <<" ";
 
         pRenderContext->clearUAV(mpCheckSumBuffer[(params.frameCount + 1) % 2]->getUAV().get(), uint4(0));
         pRenderContext->clearUAV(mpCellCounter[(params.frameCount + 1) % 2]->getUAV().get(), uint4(0));
@@ -154,12 +158,12 @@ namespace Falcor
 
     }
 
-    void WorldSpaceReSTIRGI::UpdateReSTIRGI(RenderContext* pRenderContext, const Buffer::SharedPtr& initialSample, const Texture::SharedPtr& vNormW, const Texture::SharedPtr& vDepth, const Texture::SharedPtr& vbuffer)
+    void WorldSpaceReSTIRGI::UpdateReSTIRGI(RenderContext* pRenderContext, const Buffer::SharedPtr& initialSample, const Texture::SharedPtr& vNormW, const Texture::SharedPtr& vDepth, const Buffer::SharedPtr& reconnectionData, const Texture::SharedPtr& vbuffer)
     {
         UpdateProgram();
         InitReservoirPass(pRenderContext, initialSample);
         BuildHashGridPass(pRenderContext);
-        ResamplingPass(pRenderContext, vDepth, vNormW, vbuffer);
+        ResamplingPass(pRenderContext, vDepth, vNormW, reconnectionData,vbuffer);
         FinalShadingPass(pRenderContext);
     }
 
@@ -192,6 +196,8 @@ namespace Falcor
 
         var["sampleManager"]["params"].setBlob(params);
 
+        var["sampleManager"]["finalSample"] = mpFinalSample;
+
         mpInitReservoirPass->execute(pRenderContext, uint3(params.frameDim.x, params.frameDim.y, 1u));
     }
 
@@ -212,7 +218,7 @@ namespace Falcor
         mpBuildHashGridPass->execute(pRenderContext, uint3(params.frameDim.x, params.frameDim.y, 1u));
     }
 
-    void WorldSpaceReSTIRGI::ResamplingPass(RenderContext* pRenderContext, const Texture::SharedPtr& vDepth, const Texture::SharedPtr& vNormW, const Texture::SharedPtr& vbuffer)
+    void WorldSpaceReSTIRGI::ResamplingPass(RenderContext* pRenderContext, const Texture::SharedPtr& vDepth, const Texture::SharedPtr& vNormW, const Buffer::SharedPtr& reconnectionData, const Texture::SharedPtr& vbuffer)
     {
         PROFILE("WorldSpaceReSTIR::ReSampling");
 
@@ -222,10 +228,12 @@ namespace Falcor
 
         var["resampleManager"]["depth"] = vDepth;
         var["resampleManager"]["norm"] = vNormW;
-        var["resampleManager"]["vbuffer"] = vbuffer;
+        var["resampleManager"]["reconnectionDataBuffer"] = reconnectionData;
 
         var["resampleManager"]["prevViewProj"] = mPreViewProj;
         var["resampleManager"]["cameraPrePos"] = mPreCameraPos;
+
+        var["resampleManager"]["vbuffer"] = vbuffer;
 
         var["resampleManager"]["initialReservoirs"] = mpInitialReservoir;
         var["resampleManager"]["preReservoirs"] = mpReservoirs[(params.frameCount + 0) % 2];

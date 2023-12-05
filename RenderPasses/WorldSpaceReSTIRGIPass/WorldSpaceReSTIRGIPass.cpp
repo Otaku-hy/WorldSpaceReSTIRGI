@@ -55,7 +55,7 @@ namespace
         {kOutputColor,"outputColor","",false,ResourceFormat::RGBA32Float}
     };
 
-    const uint32_t kMaxPayloadSizeBytes = 128u;
+    const uint32_t kMaxPayloadSizeBytes = 256u;
 }
 
 // Don't remove this. it's required for hot-reload to function properly
@@ -133,9 +133,11 @@ void WorldSpaceReSTIRGIPass::execute(RenderContext* pRenderContext, const Render
         params.currentGIInstance = i;
         UpdateResource();
         UpdateProgram();
+        //std::cout << "heer";
         reSTIRInstances[i]->BeginFrame(pRenderContext, params.frameDim);
         PrepareGIData(pRenderContext, renderData);
-        reSTIRInstances[i]->UpdateReSTIRGI(pRenderContext, mpInitialSample,renderData[kInputNormBuffer]->asTexture(), renderData[kInputDepthBuffer]->asTexture(), renderData[kInputVBuffer]->asTexture());
+        //reSTIRInstances[i]->params._pad = float3(pad, 0, 0);
+        reSTIRInstances[i]->UpdateReSTIRGI(pRenderContext, mpInitialSample,renderData[kInputNormBuffer]->asTexture(), renderData[kInputDepthBuffer]->asTexture(), mpReconnectionData,renderData[kInputVBuffer]->asTexture());
         FinalShading(pRenderContext, renderData, i);
         reSTIRInstances[i]->EndFrame(pRenderContext);
     }
@@ -162,11 +164,14 @@ void WorldSpaceReSTIRGIPass::renderUI(Gui::Widgets& widget)
     if (!reSTIRInstances.empty() && reSTIRInstances[0])
     {
         mOptionChanged = reSTIRInstances[0]->renderUI(widget);
+        staticDirty |= mOptionChanged;
         for (size_t i = 1; i < reSTIRInstances.size(); i++)
         {
             reSTIRInstances[i]->CopyRecompileState(reSTIRInstances[0]);
         }
     }
+
+    runtimeDirty |= widget.var("11", pad, 0u, 2u);
 
     if (staticDirty) mRecompile = true;
     bool dirty = staticDirty || runtimeDirty;
@@ -235,7 +240,6 @@ void WorldSpaceReSTIRGIPass::setScene(RenderContext* pRenderContext, const Scene
 
         reSTIRInstances.resize(numReSTIRInstances);
         params.numGIInstance = numReSTIRInstances;
-        std::cout << "here" << std::endl << std::endl;
         for (uint32_t i = 0; i < numReSTIRInstances; i++)
         {
             reSTIRInstances[i] = WorldSpaceReSTIRGI::create(mpScene, mOptions, i, numReSTIRInstances);
@@ -251,8 +255,9 @@ void WorldSpaceReSTIRGIPass::UpdateProgram()
 
     RtProgram::Desc desc = mPathTracingPass.mpProgram->getRtDesc();
     desc = desc.addDefines(defines);
+   
     mPathTracingPass.mpProgram = RtProgram::create(desc);
-
+    
     mPathTracingPass.mpVars = RtProgramVars::create(mPathTracingPass.mpProgram, mPathTracingPass.mpBindTable);
 
     mRecompile = false;
@@ -277,6 +282,10 @@ void WorldSpaceReSTIRGIPass::UpdateResource()
     {
         mpInitialSample = Buffer::createStructured(mpReflectTypePass["initialSamples"], elementCount, Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false);
     }
+    if (!mpReconnectionData || mpReconnectionData->getElementCount() != elementCount)
+    {
+        mpReconnectionData = Buffer::createStructured(mpReflectTypePass["reconnectionDataBuffer"], elementCount, Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess, Buffer::CpuAccess::None, nullptr, false);
+    }
 }
 
 Program::DefineList WorldSpaceReSTIRGIPass::GetDefines()
@@ -298,6 +307,7 @@ Program::DefineList WorldSpaceReSTIRGIPass::GetDefines()
     defines.add("USE_NEE", mPtOptions.usedNEE ? "1" : "0");
     defines.add("USE_MIS", mPtOptions.usedMIS ? "1" : "0");
     defines.add("MAX_GI_BOUNCE", std::to_string(mPtOptions.maxBounces));
+    defines.add("GI_ROUGHNESS_THRESHOLD", std::to_string(mOptions->roughnessThreshold));
 
     return defines;
 }
@@ -309,6 +319,8 @@ void WorldSpaceReSTIRGIPass::PrepareGIData(RenderContext* pRenderContext, const 
     vars["sampleInitializer"]["vbuffer"] = renderData[kInputVBuffer]->asTexture();
     vars["sampleInitializer"]["initialSamples"] = mpInitialSample;
     vars["sampleInitializer"]["outputColor"] = renderData[kOutputColor]->asTexture();
+    vars["sampleInitializer"]["reconnectionDataBuffer"] = mpReconnectionData;
+    vars["sampleInitializer"]["roughnessThreshold"] = mOptions->roughnessThreshold;
 
     vars["pathtracer"]["params"].setBlob(params);
     vars["gScene"] = mpScene->getParameterBlock();
@@ -324,6 +336,7 @@ void WorldSpaceReSTIRGIPass::FinalShading(RenderContext* pRenderContext, const R
     auto vars = mpFinalShadingPass->getRootVar();
 
     vars["finalShading"]["vbuffer"] = renderData[kInputVBuffer]->asTexture();
+    vars["finalShading"]["reconnectionDataBuffer"] = mpReconnectionData;
 
     vars["finalShading"]["outputColor"] = renderData[kOutputColor]->asTexture();
 

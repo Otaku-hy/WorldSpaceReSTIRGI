@@ -99,6 +99,7 @@ private:
     std::vector<WorldSpaceReSTIRGI::SharedPtr> reSTIRInstances;
 
     Buffer::SharedPtr mpInitialSample;
+    Buffer::SharedPtr mpReconnectionData;
 
     Scene::SharedPtr mpScene;
     SampleGenerator::SharedPtr mpSampleGenerator;
@@ -106,4 +107,6 @@ private:
     EmissiveLightSampler::SharedPtr mpEmissiveSampler;
 
     PTRuntimeParams params;
+
+    uint pad = 0;
 };

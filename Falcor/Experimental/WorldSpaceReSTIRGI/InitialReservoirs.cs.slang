@@ -2,12 +2,15 @@ import InitialSamples;
 import GIReservoir;
 import HashBuildStructure;
 import Params;
+import GIFinalSample;
 
 struct SampleManager
 {
     StructuredBuffer<InitialSample> initialSamples;
     RWStructuredBuffer<Reservoir> initialReservoirs;
     RWStructuredBuffer<HashAppendData> appendBuffer;
+
+    RWStructuredBuffer<FinalSample> finalSample;
 
     RWByteAddressBuffer checkSum;
     RWByteAddressBuffer cellCounters;
@@ -74,10 +77,13 @@ struct SampleManager
         uint linearIdx = ToLinearIndex(pixel);
         Reservoir r = SetGIReservoir(initialSamples[linearIdx]);
         HashAppendData data = BuildHashAppendData(r.vPos, r.vNorm, linearIdx);
-        
+
+        FinalSample s = { };
+        s.Li = data.isValid > 0 ? float3(sin(data.cellIdx), cos(data.cellIdx), cos(data.cellIdx * 2.7445f + 1.4212f)) : 0.f;
+
         initialReservoirs[linearIdx] = r;
         appendBuffer[linearIdx] = data;
-       
+        //finalSample[linearIdx] = s;
     }
 };
 

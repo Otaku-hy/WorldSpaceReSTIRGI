@@ -42,7 +42,7 @@ namespace Falcor
             /// static params -> changed requires recomplie
             /// </summary>
             float roughnessThreshold = 0.2f;
-            uint sceneGridDimension = 200u;
+            uint sceneGridDimension = 80u;
             TargetPdf resamplingTargetPdf = TargetPdf::IncomingRadiance;
         };
 
@@ -53,12 +53,13 @@ namespace Falcor
         bool renderUI(Gui::Widgets& widget);
 
         void BeginFrame(RenderContext* pRenderContext, uint2 frameDim);
-        void UpdateReSTIRGI(RenderContext* pRenderContext, const Buffer::SharedPtr& initialSample, const Texture::SharedPtr& vNormW, const Texture::SharedPtr& vDepth, const Texture::SharedPtr& vbuffer);
+        void UpdateReSTIRGI(RenderContext* pRenderContext, const Buffer::SharedPtr& initialSample, const Texture::SharedPtr& vNormW, const Texture::SharedPtr& vDepth, const Buffer::SharedPtr& reconnectionData, const Texture::SharedPtr& vbuffer);
         void EndFrame(RenderContext* pRenderContext);
 
         void CopyRecompileState(SharedPtr other);
 
         Buffer::SharedPtr mpFinalSample;
+        GIParameter params;
 
     private:
         WorldSpaceReSTIRGI(const Scene::SharedPtr& pScene, const Options::SharedPtr& options, uint instanceID, uint numInstance);
@@ -67,12 +68,12 @@ namespace Falcor
         void UpdateProgram();
         void InitReservoirPass(RenderContext* pRenderContext, const Buffer::SharedPtr& initialSample);
         void BuildHashGridPass(RenderContext* pRenderContext);
-        void ResamplingPass(RenderContext* pRenderContext, const Texture::SharedPtr& vDepth, const Texture::SharedPtr& vNormW, const Texture::SharedPtr& vbuffer);
+        void ResamplingPass(RenderContext* pRenderContext, const Texture::SharedPtr& vDepth, const Texture::SharedPtr& vNormW, const Buffer::SharedPtr& reconnectionData, const Texture::SharedPtr& vbuffer);
         void FinalShadingPass(RenderContext* pRenderContext);
 
         Options::SharedPtr mOptions;
         Scene::SharedPtr mpScene;
-        GIParameter params;
+        
 
         SampleGenerator::SharedPtr mpSampleGenerator;
 
